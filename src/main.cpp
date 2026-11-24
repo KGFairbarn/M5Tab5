@@ -20,6 +20,7 @@
 #include "DailyPlanner.h"
 #include "Geocache.h"
 #include "FlightRadar.h"
+#include "CameraApp.h"
 #include "MeshtasticBLE.h"
 
 Preferences prefs;
@@ -121,6 +122,8 @@ void connectToWiFi() {
 void setup() {
     delay(1500); 
     Serial.begin(115200);
+    Serial.printf("[BOOT] reset_reason=%d heap=%u psram=%u\n",
+                  (int)esp_reset_reason(), (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getFreePsram());
 
     // Initialize NVS (Fixes the Preferences NOT_FOUND error)
     esp_err_t err = nvs_flash_init();
@@ -165,64 +168,43 @@ void playTone(int freq, int duration) {
 // ======================== MENUS ==================================
 void drawMainMenu() {
     M5.Display.fillScreen(C_BG);
-    M5.Display.fillRoundRect(sw*0.08, 22, sw*0.84, 96, 22, C_BLUE);
+    M5.Display.fillRoundRect(28, 20, sw - 56, 92, 22, C_BLUE);
     M5.Display.setTextDatum(middle_center);
     M5.Display.setFont(&fonts::FreeSansBold24pt7b);
     M5.Display.setTextColor(TFT_WHITE);
-    M5.Display.drawString("RUBY HUB", sw/2, 70);
+    M5.Display.drawString("RUBY HUB", sw/2, 66);
 
     // Wi-Fi Status Indicator
-    M5.Display.fillCircle(sw*0.08 + sw*0.84 - 25, 22 + 24, 11, (WiFi.status() == WL_CONNECTED) ? C_GREEN : C_RED);
+    M5.Display.fillCircle(sw - 54, 44, 11, (WiFi.status() == WL_CONNECTED) ? C_GREEN : C_RED);
 
-    // 1. Math Explorer (y: 136..274)
-    M5.Display.fillRoundRect(sw*0.08, 136, sw*0.84, 138, 22, C_ORANGE);
-    M5.Display.setFont(&fonts::FreeSansBold24pt7b);
-    M5.Display.drawString("MATH EXPLORER", sw/2, 184);
-    M5.Display.setFont(&fonts::FreeSans12pt7b);
-    M5.Display.drawString("Numbers, Logic & Dice", sw/2, 236);
+    // 2-Column x 4-Row Tablet App Grid (320 x 262 per card)
+    struct HubTile { const char* title; const char* sub; uint16_t col; bool bleDot; };
+    const HubTile tiles[8] = {
+        { "MATH",    "Flashcards & Dice", C_ORANGE, false },
+        { "WORDS",   "Spelling & Apple",  C_PURPLE, false },
+        { "PLANNER", "Weather & Sched",   C_TEAL,   false },
+        { "GEOCACHE","Maps, GPS & GPX",   C_GREEN,  false },
+        { "RADAR",   "OWLOS Live Planes", 0x02D4,   false },
+        { "CAMERA",  "Photo, Video & SD", C_RED,    false },
+        { "MESH",    "T114 Chat & GPS",   C_BLUE,   true  },
+        { "SETTINGS","Wi-Fi & Options",   0x528A,   false }
+    };
 
-    // 2. Word Explorer (y: 290..428)
-    M5.Display.fillRoundRect(sw*0.08, 290, sw*0.84, 138, 22, C_PURPLE);
-    M5.Display.setFont(&fonts::FreeSansBold24pt7b);
-    M5.Display.drawString("WORD EXPLORER", sw/2, 338);
-    M5.Display.setFont(&fonts::FreeSans12pt7b);
-    M5.Display.drawString("Spelling, Vocab & Apple Tree", sw/2, 390);
-
-    // 3. Daily Planner (y: 444..582)
-    M5.Display.fillRoundRect(sw*0.08, 444, sw*0.84, 138, 22, C_TEAL);
-    M5.Display.setFont(&fonts::FreeSansBold24pt7b);
-    M5.Display.drawString("DAILY PLANNER", sw/2, 492);
-    M5.Display.setFont(&fonts::FreeSans12pt7b);
-    M5.Display.drawString("Weather, Tempest & Schedule", sw/2, 544);
-
-    // 4. Geocache (y: 598..736)
-    M5.Display.fillRoundRect(sw*0.08, 598, sw*0.84, 138, 22, C_GREEN);
-    M5.Display.setFont(&fonts::FreeSansBold24pt7b);
-    M5.Display.drawString("GEOCACHE", sw/2, 646);
-    M5.Display.setFont(&fonts::FreeSans12pt7b);
-    M5.Display.drawString("Offline Maps, Compass & GPX", sw/2, 698);
-
-    // 5. Flight Radar (y: 752..890)
-    M5.Display.fillRoundRect(sw*0.08, 752, sw*0.84, 138, 22, 0x02D4);
-    M5.Display.setFont(&fonts::FreeSansBold24pt7b);
-    M5.Display.drawString("FLIGHT RADAR", sw/2, 800);
-    M5.Display.setFont(&fonts::FreeSans12pt7b);
-    M5.Display.drawString("Live ADS-B Planes & Scope", sw/2, 852);
-
-    // 6. Meshtastic (y: 906..1044)
-    M5.Display.fillRoundRect(sw*0.08, 906, sw*0.84, 138, 22, C_BLUE);
-    M5.Display.fillCircle(sw*0.08 + sw*0.84 - 25, 906 + 24, 10, isMeshBleConnected() ? C_GREEN : C_GRAY);
-    M5.Display.setFont(&fonts::FreeSansBold24pt7b);
-    M5.Display.drawString("MESHTASTIC", sw/2, 954);
-    M5.Display.setFont(&fonts::FreeSans12pt7b);
-    M5.Display.drawString("T114 BLE Chat, Nodes & GPS", sw/2, 1006);
-
-    // 7. Settings (y: 1060..1198)
-    M5.Display.fillRoundRect(sw*0.08, 1060, sw*0.84, 138, 22, 0x528A);
-    M5.Display.setFont(&fonts::FreeSansBold24pt7b);
-    M5.Display.drawString("SETTINGS", sw/2, 1108);
-    M5.Display.setFont(&fonts::FreeSans12pt7b);
-    M5.Display.drawString("Rules, Sleep Timer & Wi-Fi", sw/2, 1160);
+    for (int i = 0; i < 8; i++) {
+        int col = i % 2;
+        int row = i / 2;
+        int bx = (col == 0) ? 28 : 372;
+        int by = 134 + row * 282;
+        M5.Display.fillRoundRect(bx, by, 320, 262, 24, tiles[i].col);
+        if (tiles[i].bleDot) {
+            M5.Display.fillCircle(bx + 294, by + 26, 10, isMeshBleConnected() ? C_GREEN : C_GRAY);
+        }
+        M5.Display.setFont(&fonts::FreeSansBold24pt7b);
+        M5.Display.setTextColor(TFT_WHITE);
+        M5.Display.drawString(tiles[i].title, bx + 160, by + 108);
+        M5.Display.setFont(&fonts::FreeSans12pt7b);
+        M5.Display.drawString(tiles[i].sub, bx + 160, by + 174);
+    }
 }
 
 void drawMathMenu() {
@@ -533,6 +515,7 @@ void loop() {
     loopDailyPlanner();
     loopGeocache();
     loopFlightRadar();
+    loopCameraApp();
     loopMeshtastic();
 
     auto t = M5.Touch.getDetail();
@@ -559,14 +542,21 @@ void loop() {
 
     switch (currentState) {
         case STATE_MAIN_MENU:
-            if (tx >= sw*0.08 && tx <= sw*0.92) {
-                if (ty >= 136 && ty <= 274)        { playTone(660, 60); currentState = STATE_MATH_MENU; drawMathMenu(); }
-                else if (ty >= 290 && ty <= 428)   { playTone(660, 60); currentState = STATE_WORD_MENU; drawWordMenu(); }
-                else if (ty >= 444 && ty <= 582)   { playTone(660, 60); currentState = STATE_DAILY_PLANNER; initDailyPlanner(); }
-                else if (ty >= 598 && ty <= 736)   { playTone(660, 60); currentState = STATE_GEOCACHE; initGeocache(); }
-                else if (ty >= 752 && ty <= 890)   { playTone(660, 60); currentState = STATE_FLIGHT_RADAR; initFlightRadar(); }
-                else if (ty >= 906 && ty <= 1044)  { playTone(660, 60); currentState = STATE_MESHTASTIC; initMeshtastic(); }
-                else if (ty >= 1060 && ty <= 1198) { playTone(660, 60); currentState = STATE_SETTINGS; drawSettings(); }
+            for (int i = 0; i < 8; i++) {
+                int bx = (i % 2 == 0) ? 28 : 372;
+                int by = 134 + (i / 2) * 282;
+                if (tx >= bx && tx <= bx + 320 && ty >= by && ty <= by + 262) {
+                    playTone(660, 60);
+                    if      (i == 0) { currentState = STATE_MATH_MENU;     drawMathMenu(); }
+                    else if (i == 1) { currentState = STATE_WORD_MENU;     drawWordMenu(); }
+                    else if (i == 2) { currentState = STATE_DAILY_PLANNER; initDailyPlanner(); }
+                    else if (i == 3) { currentState = STATE_GEOCACHE;      initGeocache(); }
+                    else if (i == 4) { currentState = STATE_FLIGHT_RADAR;  initFlightRadar(); }
+                    else if (i == 5) { currentState = STATE_CAMERA;        initCameraApp(); }
+                    else if (i == 6) { currentState = STATE_MESHTASTIC;    initMeshtastic(); }
+                    else if (i == 7) { currentState = STATE_SETTINGS;      drawSettings(); }
+                    break;
+                }
             }
             break;
 
@@ -590,6 +580,7 @@ void loop() {
         case STATE_DAILY_PLANNER:     handleDailyPlannerTouch(tx, ty); break;
         case STATE_GEOCACHE:          handleGeocacheTouch(tx, ty); break;
         case STATE_FLIGHT_RADAR:      handleFlightRadarTouch(tx, ty); break;
+        case STATE_CAMERA:            handleCameraAppTouch(tx, ty); break;
         case STATE_MESHTASTIC:        handleMeshtasticTouch(tx, ty); break;
         case STATE_SETTINGS:          handleSettingsTouch(tx, ty); break;
         case STATE_WIFI_SETUP:        handleWifiSetupTouch(tx, ty); break;
