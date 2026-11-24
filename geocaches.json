@@ -1,0 +1,22 @@
+{
+  "caches": [
+    {
+      "code": "GC1001",
+      "name": "Pine Trail Stump",
+      "lat": 43.1402,
+      "lon": -70.9345,
+      "d": 1.5,
+      "t": 2.0,
+      "hint": "Under mossy bark on north side"
+    },
+    {
+      "code": "GC1002",
+      "name": "Stone Wall Crossing",
+      "lat": 43.1361,
+      "lon": -70.9410,
+      "d": 2.0,
+      "t": 2.5,
+      "hint": "Look behind the flat capstone"
+    }
+  ]
+}
